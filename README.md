@@ -26,7 +26,7 @@
 - Upload any CSV, or start instantly with a bundled sample dataset
 - Missing-value detection with one-click fix strategies (drop / mean / median / zero-fill)
 - Auto-detects the target column and whether the problem is classification or regression
-- Interactive EDA: correlation heatmap, distributions, box plots, scatter plots, categorical breakdowns
+- Interactive EDA across 8 tabs: correlation heatmap, distributions, box plots, scatter plots, categorical breakdowns, plus Seaborn-powered pair plots, joint plots, and a hierarchically clustered correlation map
 - One dropdown to pick an algorithm — classical ML or an LSTM deep learning model
 - Auto-generated metrics: accuracy/precision/recall/F1/ROC-AUC for classification, RMSE/MAE/R² for regression
 - Confusion matrix, ROC curves, feature importance/coefficients, residual plots — all interactive Plotly charts
@@ -81,6 +81,7 @@ flowchart LR
 | SVC | SVR |
 | K-Nearest Neighbors | K-Nearest Neighbors |
 | Naive Bayes | — |
+| XGBoost | XGBoost |
 | LSTM | LSTM |
 
 The app auto-detects binary vs. multiclass classification and balances the test set across classes for fair metrics.
