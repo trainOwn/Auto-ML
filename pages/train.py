@@ -362,8 +362,9 @@ render_step(2, "Data Preview & Analysis")
 qs1, qs2, qs3, qs4 = st.columns(4)
 qs1.metric("Rows", f"{df.shape[0]:,}")
 qs2.metric("Columns", f"{df.shape[1]}")
-qs3.metric("Numeric", f"{df.select_dtypes(include='number').shape[1]}")
-qs4.metric("Categorical", f"{df.select_dtypes(include='object').shape[1]}")
+n_numeric = df.select_dtypes(include="number").shape[1]
+qs3.metric("Numeric", f"{n_numeric}")
+qs4.metric("Categorical", f"{df.shape[1] - n_numeric}")
 
 col_preview, col_stats = st.columns(2)
 with col_preview:
