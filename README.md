@@ -27,10 +27,11 @@
 - Missing-value detection with one-click fix strategies (drop / mean / median / zero-fill)
 - Auto-detects the target column and whether the problem is classification or regression
 - Interactive EDA across 8 tabs: correlation heatmap, distributions, box plots, scatter plots, categorical breakdowns, plus Seaborn-powered pair plots, joint plots, and a hierarchically clustered correlation map
-- One dropdown to pick an algorithm — classical ML or an LSTM deep learning model
+- One dropdown to pick an algorithm — classical ML, XGBoost, or an LSTM deep learning model
+- Per-algorithm hyperparameter controls (e.g. `n_estimators`/`max_depth` for tree ensembles, `C`/`kernel` for SVC/SVR, `alpha` for Ridge/Lasso/ElasticNet, LSTM units/epochs/dropout) — only the fields relevant to the chosen model are shown
 - Auto-generated metrics: accuracy/precision/recall/F1/ROC-AUC for classification, RMSE/MAE/R² for regression
 - Confusion matrix, ROC curves, feature importance/coefficients, residual plots — all interactive Plotly charts
-- Every trained model is saved to disk with its scaler, encoders, and metadata
+- Every trained model is saved to disk, prefixed with the source dataset name, along with its scaler, encoders, hyperparameters, and metadata
 
 </details>
 
@@ -41,6 +42,15 @@
 - Predict on a single record via a form, or batch-predict on an uploaded CSV
 - Class probabilities shown as a table + bar chart for classification
 - Download batch predictions as CSV
+
+</details>
+
+<details>
+<summary><strong>Compare Models</strong> — see which model wins on a given dataset</summary>
+
+- Pick a dataset, then multiselect which of its trained models to compare
+- Sorted comparison table plus a best-model banner
+- Grouped bar charts: accuracy/F1 for classification, R²/RMSE for regression
 
 </details>
 
@@ -91,8 +101,9 @@ The app auto-detects binary vs. multiclass classification and balances the test 
 ```
 app.py                  # entry point — sets up navigation between pages
 pages/
-  train.py              # upload, EDA, training, evaluation, model saving
+  train.py              # upload, EDA, hyperparameters, training, evaluation, model saving
   inference.py          # load a saved model, predict single/batch
+  compare.py            # compare trained models on the same dataset
   styles.py             # shared CSS theme + UI helpers
 dataset/                # sample CSVs to try the app with
 saved_models/           # trained models + scaler/encoders + metadata.json

@@ -134,7 +134,7 @@ def detect_target_column(df: pd.DataFrame) -> str | None:
         if col.strip().lower() in common_names:
             return col
     for col in reversed(df.columns.tolist()):
-        if df[col].dtype == "object":
+        if not pd.api.types.is_numeric_dtype(df[col]):
             return col
     for col in reversed(df.columns.tolist()):
         if df[col].nunique() < 20:
@@ -143,7 +143,7 @@ def detect_target_column(df: pd.DataFrame) -> str | None:
 
 
 def detect_problem_type(df: pd.DataFrame, target_col: str) -> str:
-    if df[target_col].dtype == "object":
+    if not pd.api.types.is_numeric_dtype(df[target_col]):
         return "Classification"
     if df[target_col].nunique() < 20:
         return "Classification"
@@ -200,6 +200,117 @@ def build_lstm_model(
         model.add(keras.layers.Dense(1))
         model.compile(optimizer="adam", loss="mse", metrics=["mae"])
     return model
+
+
+def render_hyperparams(algo_name: str) -> dict:
+    """Render widgets for the chosen algorithm's tunable hyperparameters, return as kwargs."""
+    kwargs = {}
+
+    if algo_name == "Logistic Regression":
+        c1, c2 = st.columns(2)
+        with c1:
+            kwargs["C"] = st.number_input(
+                "C (inverse regularization)", 0.01, 100.0, 1.0, 0.01
+            )
+        with c2:
+            kwargs["max_iter"] = st.number_input("Max Iterations", 100, 5000, 1000, 100)
+
+    elif algo_name in ("Ridge Regression", "Lasso Regression"):
+        kwargs["alpha"] = st.slider(
+            "Alpha (regularization strength)", 0.01, 10.0, 1.0, 0.01
+        )
+
+    elif algo_name == "ElasticNet":
+        c1, c2 = st.columns(2)
+        with c1:
+            kwargs["alpha"] = st.slider("Alpha", 0.01, 10.0, 1.0, 0.01)
+        with c2:
+            kwargs["l1_ratio"] = st.slider("L1 Ratio", 0.0, 1.0, 0.5, 0.05)
+
+    elif algo_name == "Decision Tree":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            depth = st.number_input("Max Depth (0 = unlimited)", 0, 50, 0, 1)
+            kwargs["max_depth"] = None if depth == 0 else depth
+        with c2:
+            kwargs["min_samples_split"] = st.number_input(
+                "Min Samples Split", 2, 50, 2, 1
+            )
+        with c3:
+            kwargs["min_samples_leaf"] = st.number_input(
+                "Min Samples Leaf", 1, 50, 1, 1
+            )
+
+    elif algo_name == "Random Forest":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            kwargs["n_estimators"] = st.number_input("N Estimators", 10, 1000, 100, 10)
+        with c2:
+            depth = st.number_input("Max Depth (0 = unlimited)", 0, 50, 0, 1)
+            kwargs["max_depth"] = None if depth == 0 else depth
+        with c3:
+            kwargs["min_samples_split"] = st.number_input(
+                "Min Samples Split", 2, 50, 2, 1
+            )
+
+    elif algo_name == "Gradient Boosting":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            kwargs["n_estimators"] = st.number_input("N Estimators", 10, 1000, 100, 10)
+        with c2:
+            kwargs["learning_rate"] = st.number_input(
+                "Learning Rate", 0.001, 1.0, 0.1, 0.001, format="%.3f"
+            )
+        with c3:
+            kwargs["max_depth"] = st.number_input("Max Depth", 1, 20, 3, 1)
+
+    elif algo_name == "AdaBoost":
+        c1, c2 = st.columns(2)
+        with c1:
+            kwargs["n_estimators"] = st.number_input("N Estimators", 10, 1000, 50, 10)
+        with c2:
+            kwargs["learning_rate"] = st.number_input(
+                "Learning Rate", 0.001, 5.0, 1.0, 0.001, format="%.3f"
+            )
+
+    elif algo_name in ("Support Vector Machine (SVC)", "Support Vector Machine (SVR)"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            kwargs["C"] = st.number_input("C", 0.01, 100.0, 1.0, 0.01)
+        with c2:
+            kwargs["kernel"] = st.selectbox(
+                "Kernel", ["rbf", "linear", "poly", "sigmoid"]
+            )
+        with c3:
+            kwargs["gamma"] = st.selectbox("Gamma", ["scale", "auto"])
+        if algo_name == "Support Vector Machine (SVR)":
+            kwargs["epsilon"] = st.slider("Epsilon", 0.0, 1.0, 0.1, 0.01)
+
+    elif algo_name == "K-Nearest Neighbors":
+        c1, c2 = st.columns(2)
+        with c1:
+            kwargs["n_neighbors"] = st.number_input("N Neighbors", 1, 50, 5, 1)
+        with c2:
+            kwargs["weights"] = st.selectbox("Weights", ["uniform", "distance"])
+
+    elif algo_name == "Naive Bayes (Gaussian)":
+        exponent = st.slider("Var Smoothing (10^x)", -12, -3, -9)
+        kwargs["var_smoothing"] = 10.0**exponent
+
+    elif algo_name == "XGBoost":
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            kwargs["n_estimators"] = st.number_input("N Estimators", 10, 1000, 100, 10)
+        with c2:
+            kwargs["max_depth"] = st.number_input("Max Depth", 1, 20, 6, 1)
+        with c3:
+            kwargs["learning_rate"] = st.number_input(
+                "Learning Rate", 0.001, 1.0, 0.3, 0.001, format="%.3f"
+            )
+        with c4:
+            kwargs["subsample"] = st.slider("Subsample", 0.1, 1.0, 1.0, 0.1)
+
+    return kwargs
 
 
 # ── UI ───────────────────────────────────────────────
@@ -322,38 +433,30 @@ if len(cols_with_missing) > 0:
                 )
             elif strategy.startswith("Fill with Mean"):
                 for col in cols_with_missing.index:
-                    if df[col].dtype in ("float64", "int64"):
-                        df[col].fillna(df[col].mean(), inplace=True)
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        df[col] = df[col].fillna(df[col].mean())
                     else:
-                        df[col].fillna(
-                            (
-                                df[col].mode()[0]
-                                if not df[col].mode().empty
-                                else "Unknown"
-                            ),
-                            inplace=True,
+                        mode_val = df[col].mode()
+                        df[col] = df[col].fillna(
+                            mode_val[0] if not mode_val.empty else "Unknown"
                         )
                 st.success("Filled with Mean / Mode.")
             elif strategy.startswith("Fill with Median"):
                 for col in cols_with_missing.index:
-                    if df[col].dtype in ("float64", "int64"):
-                        df[col].fillna(df[col].median(), inplace=True)
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        df[col] = df[col].fillna(df[col].median())
                     else:
-                        df[col].fillna(
-                            (
-                                df[col].mode()[0]
-                                if not df[col].mode().empty
-                                else "Unknown"
-                            ),
-                            inplace=True,
+                        mode_val = df[col].mode()
+                        df[col] = df[col].fillna(
+                            mode_val[0] if not mode_val.empty else "Unknown"
                         )
                 st.success("Filled with Median / Mode.")
             else:
                 for col in cols_with_missing.index:
-                    if df[col].dtype in ("float64", "int64"):
-                        df[col].fillna(0, inplace=True)
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        df[col] = df[col].fillna(0)
                     else:
-                        df[col].fillna("Unknown", inplace=True)
+                        df[col] = df[col].fillna("Unknown")
                 st.success("Filled with Zero / 'Unknown'.")
             remaining = df.isnull().sum().sum()
             if remaining == 0:
@@ -435,8 +538,10 @@ render_divider()
 # ─── Step 4: EDA ────────────────────────────────────
 render_step(4, "Exploratory Data Analysis")
 
-numeric_input_cols = [c for c in input_cols if df[c].dtype in ("int64", "float64")]
-categorical_input_cols = [c for c in input_cols if df[c].dtype == "object"]
+numeric_input_cols = [c for c in input_cols if pd.api.types.is_numeric_dtype(df[c])]
+categorical_input_cols = [
+    c for c in input_cols if not pd.api.types.is_numeric_dtype(df[c])
+]
 
 (
     eda_tab_corr,
@@ -707,18 +812,19 @@ with eda_tab_joint:
         st.info("Need at least 2 numeric columns.")
 
 with eda_tab_cluster:
-    if len(numeric_input_cols) >= 2:
-        corr_cluster = df[numeric_input_cols].corr()
+    cluster_cols = [c for c in numeric_input_cols if df[c].std() > 0]
+    if len(cluster_cols) >= 2:
+        corr_cluster = df[cluster_cols].corr()
         with st.spinner("Rendering cluster map..."):
             cluster_grid = sns.clustermap(
                 corr_cluster,
                 cmap="vlag",
                 center=0,
-                annot=len(numeric_input_cols) <= 12,
+                annot=len(cluster_cols) <= 12,
                 fmt=".2f",
                 figsize=(
-                    max(6, len(numeric_input_cols) * 0.6),
-                    max(6, len(numeric_input_cols) * 0.6),
+                    min(20, max(6, len(cluster_cols) * 0.6)),
+                    min(20, max(6, len(cluster_cols) * 0.6)),
                 ),
             )
             st.pyplot(cluster_grid.figure)
@@ -726,8 +832,12 @@ with eda_tab_cluster:
         st.caption(
             "Features are hierarchically clustered so groups of correlated features sit next to each other — useful for spotting redundant features."
         )
+        if len(cluster_cols) < len(numeric_input_cols):
+            st.caption(
+                f"Excluded {len(numeric_input_cols) - len(cluster_cols)} zero-variance column(s)."
+            )
     else:
-        st.info("Need at least 2 numeric columns.")
+        st.info("Need at least 2 numeric columns with non-zero variance.")
 
 render_divider()
 
@@ -760,6 +870,12 @@ if is_lstm:
                 "Batch Size", min_value=8, max_value=256, value=32, step=8
             )
         lstm_dropout = st.slider("Dropout Rate", 0.0, 0.5, 0.2, 0.05)
+    model_kwargs = {}
+else:
+    with st.expander("Model Hyperparameters", expanded=True):
+        model_kwargs = render_hyperparams(algo_name)
+        if not model_kwargs:
+            st.caption("No tunable hyperparameters for this algorithm.")
 
 render_divider()
 
@@ -783,25 +899,24 @@ if st.button("Train Model", type="primary", use_container_width=True):
                 X, y = X[valid].reset_index(drop=True), y[valid].reset_index(drop=True)
             for col in X.columns:
                 if X[col].isnull().any():
-                    if X[col].dtype in ("float64", "int64"):
-                        X[col].fillna(X[col].median(), inplace=True)
+                    if pd.api.types.is_numeric_dtype(X[col]):
+                        X[col] = X[col].fillna(X[col].median())
                     else:
                         mode_val = X[col].mode()
-                        X[col].fillna(
-                            mode_val[0] if not mode_val.empty else "Unknown",
-                            inplace=True,
+                        X[col] = X[col].fillna(
+                            mode_val[0] if not mode_val.empty else "Unknown"
                         )
 
         # Encode
         label_encoders_x = {}
         for col in X.columns:
-            if X[col].dtype == "object":
+            if not pd.api.types.is_numeric_dtype(X[col]):
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
                 label_encoders_x[col] = le
 
         label_encoder_y = None
-        if problem_type == "Classification" and y.dtype == "object":
+        if problem_type == "Classification" and not pd.api.types.is_numeric_dtype(y):
             label_encoder_y = LabelEncoder()
             y = pd.Series(label_encoder_y.fit_transform(y.astype(str)), name=target_col)
 
@@ -937,16 +1052,16 @@ if st.button("Train Model", type="primary", use_container_width=True):
         else:
             ModelClass = model_catalog[algo_name]
             if algo_name == "Support Vector Machine (SVC)":
-                model = ModelClass(probability=True, random_state=42)
+                model = ModelClass(probability=True, random_state=42, **model_kwargs)
             elif algo_name in (
                 "Support Vector Machine (SVR)",
                 "Naive Bayes (Gaussian)",
             ):
-                model = ModelClass()
+                model = ModelClass(**model_kwargs)
             elif "random_state" in ModelClass().get_params():
-                model = ModelClass(random_state=42)
+                model = ModelClass(random_state=42, **model_kwargs)
             else:
-                model = ModelClass()
+                model = ModelClass(**model_kwargs)
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
             y_pred_proba = None
@@ -1276,6 +1391,17 @@ if st.button("Train Model", type="primary", use_container_width=True):
         metadata = {
             "dataset_name": dataset_name or "dataset",
             "algorithm": algo_name,
+            "hyperparameters": (
+                {
+                    "lstm_units": lstm_units,
+                    "dense_units": dense_units,
+                    "epochs": lstm_epochs,
+                    "batch_size": lstm_batch,
+                    "dropout": lstm_dropout,
+                }
+                if is_lstm
+                else model_kwargs
+            ),
             "problem_type": problem_type,
             "is_binary": is_binary if problem_type == "Classification" else False,
             "n_classes": n_classes,
