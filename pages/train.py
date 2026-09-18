@@ -642,7 +642,7 @@ with eda_tab_pair:
                     df[pair_cols + ([hue_col] if hue_col else [])],
                     hue=hue_col,
                     diag_kind="kde",
-                    palette=PLOTLY_COLORS if hue_col else None,
+                    palette=PLOTLY_COLORS[: df[hue_col].nunique()] if hue_col else None,
                     plot_kws={"alpha": 0.6, "s": 25},
                     height=2.2,
                 )
@@ -692,7 +692,7 @@ with eda_tab_joint:
                 kind=(
                     jkind if hue_col is None else "scatter" if jkind == "hex" else jkind
                 ),
-                palette=PLOTLY_COLORS if hue_col else None,
+                palette=PLOTLY_COLORS[: df[hue_col].nunique()] if hue_col else None,
                 height=6,
             )
             st.pyplot(joint_grid.figure)
