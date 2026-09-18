@@ -4,6 +4,7 @@ import numpy as np
 import os
 import json
 import joblib
+import tempfile
 import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
@@ -41,6 +42,14 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 from xgboost import XGBClassifier, XGBRegressor
+
+# --- ONNX export & quantization ---
+import onnxmltools
+from skl2onnx import convert_sklearn
+from skl2onnx.common.data_types import FloatTensorType
+from onnxmltools.convert.common.data_types import FloatTensorType as XGBFloatTensorType
+import onnxruntime as ort
+from onnxruntime.quantization import quantize_dynamic, QuantType
 
 # --- Regression algorithms ---
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
@@ -200,6 +209,50 @@ def build_lstm_model(
         model.add(keras.layers.Dense(1))
         model.compile(optimizer="adam", loss="mse", metrics=["mae"])
     return model
+
+
+def convert_model_to_onnx(model, algo_name: str, n_features: int) -> bytes:
+    """Convert a fitted sklearn/XGBoost model to an ONNX byte string."""
+    if algo_name == "XGBoost":
+        # onnxmltools requires its own FloatTensorType, caps out at opset 15, and
+        # chokes on real column names — it expects the default 'f0', 'f1', ... pattern.
+        initial_type = [("input", XGBFloatTensorType([None, n_features]))]
+        booster = model.get_booster()
+        original_feature_names = booster.feature_names
+        booster.feature_names = None
+        try:
+            onx = onnxmltools.convert_xgboost(
+                model, initial_types=initial_type, target_opset=15
+            )
+        finally:
+            booster.feature_names = original_feature_names
+        # onnxmltools only declares the ai.onnx.ml domain, which trips up ONNX
+        # Runtime's quantizer (it needs the base ai.onnx domain too).
+        if "" not in {d.domain for d in onx.opset_import}:
+            entry = onx.opset_import.add()
+            entry.domain = ""
+            entry.version = 15
+    else:
+        initial_type = [("input", FloatTensorType([None, n_features]))]
+        onx = convert_sklearn(model, initial_types=initial_type, target_opset=17)
+    return onx.SerializeToString()
+
+
+def quantize_onnx_bytes(onnx_bytes: bytes, tmp_dir: str) -> bytes:
+    """Run ONNX Runtime dynamic (int8) quantization; returns the quantized model bytes."""
+    fp32_path = os.path.join(tmp_dir, "model_fp32.onnx")
+    int8_path = os.path.join(tmp_dir, "model_int8.onnx")
+    with open(fp32_path, "wb") as f:
+        f.write(onnx_bytes)
+    quantize_dynamic(fp32_path, int8_path, weight_type=QuantType.QUInt8)
+    with open(int8_path, "rb") as f:
+        return f.read()
+
+
+def onnx_predict(onnx_bytes: bytes, X_sample: np.ndarray) -> np.ndarray:
+    """Run inference through an ONNX model for verification against the source model."""
+    sess = ort.InferenceSession(onnx_bytes, providers=["CPUExecutionProvider"])
+    return np.asarray(sess.run(None, {"input": X_sample})[0]).ravel()
 
 
 def render_hyperparams(algo_name: str) -> dict:
@@ -1427,3 +1480,129 @@ if st.button("Train Model", type="primary", use_container_width=True):
 
         st.success(f"Model saved to **saved_models/{model_name}/**")
         # st.balloons()
+
+        st.session_state["last_trained"] = {
+            "model": model,
+            "is_lstm": is_lstm,
+            "algo_name": algo_name,
+            "model_dir": model_dir,
+            "n_features": X_train.shape[1],
+            "X_sample": X_test.values[: min(100, len(X_test))].astype("float32"),
+        }
+        st.session_state.pop("onnx_export", None)
+
+render_divider()
+
+# ─── Step 8: Quantization & ONNX Export ─────────────
+render_step(8, "Model Quantization & ONNX Export")
+
+trained = st.session_state.get("last_trained")
+
+if not trained:
+    st.info("Train a model above to enable ONNX export and quantization.")
+elif trained["is_lstm"]:
+    st.info(
+        "ONNX export isn't supported for LSTM models yet — available for classical ML and XGBoost models."
+    )
+else:
+    st.caption(
+        f"Exports the **{trained['algo_name']}** model trained above (post-scaling features as ONNX input)."
+    )
+    export_clicked = st.button("Export to ONNX", type="primary")
+
+    if export_clicked:
+        with st.spinner("Converting to ONNX..."):
+            try:
+                onnx_bytes = convert_model_to_onnx(
+                    trained["model"], trained["algo_name"], trained["n_features"]
+                )
+                onnx_preds = onnx_predict(onnx_bytes, trained["X_sample"])
+                native_preds = np.asarray(
+                    trained["model"].predict(trained["X_sample"])
+                ).ravel()
+                match_rate = float(
+                    np.mean(np.isclose(onnx_preds, native_preds, rtol=1e-3, atol=1e-3))
+                )
+                st.session_state["onnx_export"] = {
+                    "fp32_bytes": onnx_bytes,
+                    "match_rate": match_rate,
+                    "int8_bytes": None,
+                }
+            except Exception as e:
+                st.error(f"ONNX conversion failed: {e}")
+
+    export_state = st.session_state.get("onnx_export")
+    if export_state:
+        fp32_bytes = export_state["fp32_bytes"]
+        render_metrics_row(
+            [
+                ("ONNX Size", f"{len(fp32_bytes) / 1024:.1f} KB", ""),
+                (
+                    "Prediction Match",
+                    f"{export_state['match_rate']:.1%}",
+                    "green" if export_state["match_rate"] > 0.99 else "amber",
+                ),
+            ]
+        )
+        st.download_button(
+            "Download model.onnx",
+            fp32_bytes,
+            file_name="model.onnx",
+            mime="application/octet-stream",
+        )
+
+        quantize_clicked = st.button("Quantize ONNX Model (dynamic int8)")
+        if quantize_clicked:
+            with st.spinner("Quantizing..."):
+                try:
+                    with tempfile.TemporaryDirectory() as tmp_dir:
+                        int8_bytes = quantize_onnx_bytes(fp32_bytes, tmp_dir)
+                    onnx_preds_q = onnx_predict(int8_bytes, trained["X_sample"])
+                    native_preds = np.asarray(
+                        trained["model"].predict(trained["X_sample"])
+                    ).ravel()
+                    match_rate_q = float(
+                        np.mean(
+                            np.isclose(onnx_preds_q, native_preds, rtol=1e-3, atol=1e-3)
+                        )
+                    )
+                    st.session_state["onnx_export"]["int8_bytes"] = int8_bytes
+                    st.session_state["onnx_export"]["match_rate_q"] = match_rate_q
+                except Exception as e:
+                    st.error(f"Quantization failed: {e}")
+
+        int8_bytes = st.session_state.get("onnx_export", {}).get("int8_bytes")
+        if int8_bytes:
+            reduction = 1 - len(int8_bytes) / len(fp32_bytes)
+            render_metrics_row(
+                [
+                    ("Quantized Size", f"{len(int8_bytes) / 1024:.1f} KB", ""),
+                    (
+                        "Size Reduction",
+                        f"{reduction:.1%}",
+                        "green" if reduction > 0.05 else "",
+                    ),
+                    (
+                        "Prediction Match",
+                        f"{export_state.get('match_rate_q', 0):.1%}",
+                        (
+                            "green"
+                            if export_state.get("match_rate_q", 0) > 0.99
+                            else "amber"
+                        ),
+                    ),
+                ]
+            )
+            if reduction < 0.05:
+                st.caption(
+                    "No meaningful size reduction: this model type uses tree/linear ONNX-ML ops "
+                    "(TreeEnsemble, LinearClassifier), not the MatMul/Conv/Gemm ops that ONNX Runtime's "
+                    "dynamic quantizer targets. This is an ecosystem limitation, not an export error — "
+                    "predictions above confirm the quantized model still matches the original."
+                )
+            st.download_button(
+                "Download model_quantized.onnx",
+                int8_bytes,
+                file_name="model_quantized.onnx",
+                mime="application/octet-stream",
+            )

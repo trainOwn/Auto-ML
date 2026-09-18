@@ -32,6 +32,7 @@
 - Auto-generated metrics: accuracy/precision/recall/F1/ROC-AUC for classification, RMSE/MAE/R² for regression
 - Confusion matrix, ROC curves, feature importance/coefficients, residual plots — all interactive Plotly charts
 - Every trained model is saved to disk, prefixed with the source dataset name, along with its scaler, encoders, hyperparameters, and metadata
+- One-click ONNX export for any classical ML or XGBoost model (LSTM not yet supported), with a prediction-match check against the original model, plus optional dynamic int8 quantization and download buttons for both
 
 </details>
 
