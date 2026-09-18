@@ -220,8 +220,10 @@ with sample_tab:
     use_sample = st.button("Load air-compressor.csv", type="primary")
 
 df = None
+dataset_name = None
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
+    dataset_name = os.path.splitext(uploaded_file.name)[0]
     st.success(
         f"Loaded **{uploaded_file.name}** &mdash; {df.shape[0]:,} rows, {df.shape[1]} columns"
     )
@@ -229,6 +231,7 @@ elif use_sample or st.session_state.get("use_sample"):
     st.session_state["use_sample"] = True
     if os.path.exists(sample_path):
         df = pd.read_csv(sample_path)
+        dataset_name = "air-compressor"
         st.success(
             f"Loaded **air-compressor.csv** &mdash; {df.shape[0]:,} rows, {df.shape[1]} columns"
         )
@@ -1245,7 +1248,14 @@ if st.button("Train Model", type="primary", use_container_width=True):
 
         # ── Save ──
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        model_name = f"{algo_name.replace(' ', '_').replace('(', '').replace(')', '')}_{timestamp}"
+        dataset_slug = (
+            (dataset_name or "dataset")
+            .replace(" ", "_")
+            .replace("(", "")
+            .replace(")", "")
+        )
+        algo_slug = algo_name.replace(" ", "_").replace("(", "").replace(")", "")
+        model_name = f"{dataset_slug}_{algo_slug}_{timestamp}"
         model_dir = os.path.join(SAVE_DIR, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
@@ -1264,6 +1274,7 @@ if st.button("Train Model", type="primary", use_container_width=True):
             )
 
         metadata = {
+            "dataset_name": dataset_name or "dataset",
             "algorithm": algo_name,
             "problem_type": problem_type,
             "is_binary": is_binary if problem_type == "Classification" else False,
