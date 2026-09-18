@@ -1,0 +1,31 @@
+{
+  "algorithm": "AdaBoost",
+  "problem_type": "Classification",
+  "is_binary": false,
+  "n_classes": 3,
+  "is_lstm": false,
+  "input_columns": [
+    "id",
+    "alcohol",
+    "malic_acid",
+    "ash",
+    "alcalinity_of_ash",
+    "magnesium",
+    "total_phenols",
+    "flavanoids",
+    "nonflavanoid_phenols",
+    "proanthocyanins",
+    "color_intensity",
+    "hue",
+    "od280/od315_of_diluted_wines",
+    "proline"
+  ],
+  "target_column": "target",
+  "train_size": 427,
+  "test_size": 87,
+  "timestamp": "20260918_103531",
+  "has_label_encoder_y": false,
+  "has_label_encoders_x": false,
+  "accuracy": 0.9540229885057471,
+  "f1_score": 0.9535916061339791
+}

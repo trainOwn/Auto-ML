@@ -1,0 +1,27 @@
+{
+  "algorithm": "Decision Tree",
+  "problem_type": "Classification",
+  "is_binary": false,
+  "n_classes": 6,
+  "is_lstm": false,
+  "input_columns": [
+    "Id",
+    "RI",
+    "Na",
+    "Mg",
+    "Al",
+    "Si",
+    "K",
+    "Ca",
+    "Ba",
+    "Fe"
+  ],
+  "target_column": "Type of glass",
+  "train_size": 171,
+  "test_size": 12,
+  "timestamp": "20260918_103339",
+  "has_label_encoder_y": false,
+  "has_label_encoders_x": false,
+  "accuracy": 1.0,
+  "f1_score": 1.0
+}
